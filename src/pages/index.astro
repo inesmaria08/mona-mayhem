@@ -92,6 +92,12 @@
         text-align: center;
         color: #656d76;
         font-style: italic;
+        animation: pulse 1.5s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
       }
 
       .error {
@@ -126,13 +132,73 @@
         word-break: break-all;
       }
 
-      @media (max-width: 600px) {
-        body {
-          padding: 10px;
+      .contribution-graph {
+        display: grid;
+        grid-template-columns: repeat(53, 1fr);
+        gap: 2px;
+        margin: 15px 0;
+        max-width: 100%;
+        overflow-x: auto;
+      }
+
+      .contribution-day {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        border: 1px solid rgba(0,0,0,0.1);
+        cursor: pointer;
+        transition: transform 0.1s ease;
+      }
+
+      .contribution-day:hover {
+        transform: scale(1.2);
+        z-index: 10;
+      }
+
+      .vs-badge {
+        text-align: center;
+        margin: 30px 0;
+        font-size: 24px;
+        font-weight: bold;
+        color: #0969da;
+        position: relative;
+      }
+
+      .vs-badge::before,
+      .vs-badge::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        width: 30%;
+        height: 2px;
+        background: linear-gradient(to right, transparent, #0969da, transparent);
+      }
+
+      .vs-badge::before {
+        left: 0;
+      }
+
+      .vs-badge::after {
+        right: 0;
+      }
+
+      .battle-container {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+      }
+
+      .player-section {
+        flex: 1;
+      }
+
+      @media (max-width: 768px) {
+        .battle-container {
+          flex-direction: column;
         }
 
-        .battle-form, .results {
-          padding: 20px;
+        .contribution-graph {
+          grid-template-columns: repeat(26, 1fr);
         }
       }
     </style>
@@ -159,11 +225,42 @@
     </div>
 
     <script>
+      // TypeScript interfaces for contribution data
+      interface ContributionDay {
+        weekday: number;
+        count: number;
+        level: number;
+      }
+
+      interface ContributionWeek {
+        index: number;
+        first_day: string;
+        contribution_days: ContributionDay[];
+      }
+
+      interface ContributionMonth {
+        month: string;
+        total_weeks: number;
+      }
+
+      interface ContributionData {
+        schema: string;
+        generated_at: string;
+        from: string;
+        to: string;
+        range_days: number;
+        total_contributions: number;
+        private_contributions_included: boolean;
+        colors_full: string[];
+        weeks: ContributionWeek[];
+        months: ContributionMonth[];
+      }
+
       document.addEventListener('DOMContentLoaded', () => {
-        const player1Input = document.getElementById('player1');
-        const player2Input = document.getElementById('player2');
-        const battleButton = document.getElementById('battleButton');
-        const resultsDiv = document.getElementById('results');
+        const player1Input = document.getElementById('player1') as HTMLInputElement;
+        const player2Input = document.getElementById('player2') as HTMLInputElement;
+        const battleButton = document.getElementById('battleButton') as HTMLButtonElement;
+        const resultsDiv = document.getElementById('results') as HTMLDivElement;
 
         // Battle button click handler
         battleButton.addEventListener('click', async () => {
@@ -198,7 +295,7 @@
           });
         });
 
-        async function startBattle(player1, player2) {
+        async function startBattle(player1: string, player2: string) {
           battleButton.disabled = true;
           battleButton.textContent = 'Battling...';
 
@@ -225,7 +322,7 @@
           }
         }
 
-        async function fetchContributionData(username) {
+        async function fetchContributionData(username: string): Promise<ContributionData> {
           const response = await fetch(`/api/contributions/${username}`);
 
           if (!response.ok) {
@@ -236,7 +333,7 @@
           return await response.json();
         }
 
-        function displayResults(player1, player1Data, player2, player2Data) {
+        function displayResults(player1: string, player1Data: ContributionData, player2: string, player2Data: ContributionData) {
           const player1Total = player1Data.total_contributions || 0;
           const player2Total = player2Data.total_contributions || 0;
 
@@ -249,27 +346,72 @@
                 `🏆 ${winner === player1 ? 'Player 1' : 'Player 2'} Wins!`}
             </h2>
 
-            <div class="player-result">
-              <h3>👤 Player 1: ${player1}</h3>
-              <p><strong>Total Contributions:</strong> ${player1Total.toLocaleString()}</p>
-              <details>
-                <summary>View Contribution Data</summary>
-                <div class="contribution-data">${JSON.stringify(player1Data, null, 2)}</div>
-              </details>
-            </div>
+            <div class="battle-container">
+              <div class="player-section">
+                ${renderPlayerSection(player1, player1Data, 1)}
+              </div>
 
+              <div class="vs-badge">VS</div>
+
+              <div class="player-section">
+                ${renderPlayerSection(player2, player2Data, 2)}
+              </div>
+            </div>
+          `;
+        }
+
+        function renderPlayerSection(username: string, data: ContributionData, playerNumber: number): string {
+          const total = data.total_contributions || 0;
+          const fromDate = new Date(data.from).toLocaleDateString();
+          const toDate = new Date(data.to).toLocaleDateString();
+
+          return `
             <div class="player-result">
-              <h3>👤 Player 2: ${player2}</h3>
-              <p><strong>Total Contributions:</strong> ${player2Total.toLocaleString()}</p>
+              <h3>👤 Player ${playerNumber}: ${username}</h3>
+              <p><strong>Total Contributions:</strong> ${total.toLocaleString()}</p>
+              <p><strong>Date Range:</strong> ${fromDate} - ${toDate}</p>
+              <div class="contribution-graph">
+                ${renderContributionGraph(data)}
+              </div>
               <details>
-                <summary>View Contribution Data</summary>
-                <div class="contribution-data">${JSON.stringify(player2Data, null, 2)}</div>
+                <summary>View Raw Data</summary>
+                <div class="contribution-data">${JSON.stringify(data, null, 2)}</div>
               </details>
             </div>
           `;
         }
 
-        function showError(message) {
+        function renderContributionGraph(data: ContributionData): string {
+          // GitHub's color palette (from darkest to lightest)
+          const colors = data.colors_full || ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#216e39'];
+
+          // Create a flat array of all contribution days with dates
+          const allDays: Array<{day: ContributionDay, date: Date}> = [];
+          data.weeks.forEach(week => {
+            const weekStart = new Date(week.first_day);
+            week.contribution_days.forEach((day, index) => {
+              const dayDate = new Date(weekStart);
+              dayDate.setDate(weekStart.getDate() + index);
+              allDays.push({day, date: dayDate});
+            });
+          });
+
+          // Take the last 365 days (approximately 52 weeks * 7 days)
+          const recentDays = allDays.slice(-365);
+
+          return recentDays.map(({day, date}) => {
+            const color = colors[day.level] || colors[0];
+            const dateStr = date.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            });
+            const title = `${day.count} contribution${day.count !== 1 ? 's' : ''} on ${dateStr}`;
+            return `<div class="contribution-day" style="background-color: ${color}" title="${title}"></div>`;
+          }).join('');
+        }
+
+        function showError(message: string) {
           resultsDiv.style.display = 'block';
           resultsDiv.innerHTML = `<div class="error">❌ ${message}</div>`;
         }
